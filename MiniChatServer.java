@@ -26,7 +26,6 @@ public class MiniChatServer {
         }
     }
     
-    
     public static synchronized boolean hasClient(String username) {
         return clients.containsKey(username);
     }
@@ -36,7 +35,6 @@ public class MiniChatServer {
         joinGroup("defaultGroup", clientHandler);
     }
     
-
     public static synchronized void removeClient(String username) {
         clients.remove(username);
     }
@@ -55,7 +53,6 @@ public class MiniChatServer {
         return "Available groups: " + String.join(", ", groups.keySet());
     }
 
-
     public static synchronized void createGroup(String groupName, ClientHandler creator) {
         groups.putIfAbsent(groupName, new ArrayList<>());
         groups.get(groupName).add(creator);
@@ -65,10 +62,15 @@ public class MiniChatServer {
         if (groups.containsKey(groupName)) {
             List<ClientHandler> groupMembers = groups.get(groupName);
     
-            // Kiểm tra nếu user đã có trong group
             if (groupMembers.contains(clientHandler)) {
                 clientHandler.sendMessage("You are already in the group: " + groupName);
             } else {
+                // Xóa khỏi defaultGroup nếu người dùng đang ở trong đó
+                if (groups.get("defaultGroup").contains(clientHandler)) {
+                    groups.get("defaultGroup").remove(clientHandler);
+                    clientHandler.sendMessage("You have left the default group.");
+                }
+    
                 groupMembers.add(clientHandler);
                 clientHandler.sendMessage("You have joined the group: " + groupName);
             }
@@ -76,21 +78,38 @@ public class MiniChatServer {
             clientHandler.sendMessage("Group does not exist.");
         }
     }
-
-    public static synchronized void sendMessageToGroup(String groupName, String message, ClientHandler sender) {
-        if (groups.containsKey(groupName)) {
-            String fullMessage = "[" + groupName + "] " + sender.getUsername() + ": " + message;
     
-            // Gửi tin nhắn đến tất cả thành viên trong nhóm, bao gồm cả người gửi
+    public static synchronized void sendMessageToGroup(String groupName, String message, ClientHandler sender) {
+    if (groups.containsKey(groupName)) {
+        String fullMessage = "[" + groupName + "] " + sender.getUsername() + ": " + message;
+        
+        // Nếu là default group, chỉ gửi cho những người trong default group
+        if (groupName.equals("defaultGroup")) {
+            List<ClientHandler> defaultGroupMembers = groups.get("defaultGroup");
+            for (ClientHandler client : defaultGroupMembers) {
+                // Kiểm tra xem client có phải là thành viên của bất kỳ nhóm nào khác không
+                boolean isInOtherGroups = false;
+                for (Map.Entry<String, List<ClientHandler>> entry : groups.entrySet()) {
+                    if (!entry.getKey().equals("defaultGroup") && entry.getValue().contains(client)) {
+                        isInOtherGroups = true;
+                        break;
+                    }
+                }
+                // Chỉ gửi tin nhắn nếu client không ở trong nhóm nào khác
+                if (!isInOtherGroups) {
+                    client.sendMessage(fullMessage);
+                }
+            }
+        } else {
+            // Đối với các nhóm khác, gửi tin nhắn cho tất cả thành viên như bình thường
             for (ClientHandler client : groups.get(groupName)) {
                 client.sendMessage(fullMessage);
             }
-        } else {
-            sender.sendMessage("Group does not exist.");
         }
+    } else {
+        sender.sendMessage("Group does not exist.");
     }
-    
-    
+}
 
     public static synchronized void leaveGroup(String groupName, ClientHandler clientHandler) {
         if (groups.containsKey(groupName)) {
@@ -113,7 +132,6 @@ public class MiniChatServer {
         }
     }
     
-
     public static synchronized void sendMessageToUser(String recipient, String message, ClientHandler sender) {
         ClientHandler client = clients.get(recipient);
         if (client != null) {
@@ -121,6 +139,15 @@ public class MiniChatServer {
         } else {
             sender.sendMessage("User not found.");
         }
+    }
+
+    public static synchronized boolean isUserInOtherGroups(ClientHandler client) {
+        for (Map.Entry<String, List<ClientHandler>> entry : groups.entrySet()) {
+            if (!entry.getKey().equals("defaultGroup") && entry.getValue().contains(client)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -148,7 +175,6 @@ class ClientHandler implements Runnable {
         return username;
     }
     
-
     @Override
     public void run() {
         try {
@@ -198,6 +224,11 @@ class ClientHandler implements Runnable {
         if (command.equalsIgnoreCase("/quit")) {
             sendMessage("Goodbye!");
             closeConnection();
+        } else if (command.startsWith("/sendUser")) {
+            String[] parts = command.split(" ", 3);
+            String recipient = parts[1];
+            String privateMessage = parts[2];
+            MiniChatServer.sendMessageToUser(recipient, username + " (private): " + privateMessage, this);
         } else if (command.startsWith("/create")) {
             String groupName = command.split(" ")[1];
             MiniChatServer.createGroup(groupName, this);
@@ -222,7 +253,11 @@ class ClientHandler implements Runnable {
             sendMessage("Please enter a message after '/'.");
         } else if (!command.startsWith("/") && !command.isEmpty()) {
             // Nếu người dùng không nhập lệnh (chỉ có tin nhắn) sẽ gửi vào defaultGroup
-            MiniChatServer.sendMessageToGroup("defaultGroup", username + ": " + command, this);
+            if (MiniChatServer.isUserInOtherGroups(this)) {
+                    sendMessage("You cannot send messages to default group while being in other groups.");
+                return;
+            }
+            MiniChatServer.sendMessageToGroup("defaultGroup", ": " + command, this);
         } else if (command.startsWith("/listUsers")) {
             sendMessage(MiniChatServer.getUsersList());
         } else if (command.startsWith("/listGroups")) {
