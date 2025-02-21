@@ -11,7 +11,7 @@ public class MiniChatClient {
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in))) {
 
-            System.out.println(in.readLine()); // Server asks for username
+            System.out.println(in.readLine());
             String username = userInput.readLine();
             out.println(username);
 
@@ -25,7 +25,7 @@ public class MiniChatClient {
                     e.printStackTrace();
                 }
             }).start();
-
+            
             String userMessage;
             while ((userMessage = userInput.readLine()) != null) {
                 out.println(userMessage);
